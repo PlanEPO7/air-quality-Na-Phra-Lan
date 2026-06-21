@@ -3,13 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>รายงานสถานการณ์ฝุ่น PM10 และ PM2.5</title>
+    <title>รายงานสถานการณ์ฝุ่น PM10 และ PM2.5 เขตควบคุมมลพิษตำบลหน้าพระลาน</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Chart.js Plugin for Annotation Lines -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/2.2.1/chartjs-plugin-annotation.min.js"></script>
+    <!-- Chart.js Plugin for Data Labels -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
     <!-- SheetJS for Excel/CSV Parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     
@@ -18,6 +20,7 @@
         body { font-family: 'Prompt', sans-serif; background-color: #f1f5f9; }
         .bg-gradient-main { background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); min-height: 100vh; }
         .chart-container { position: relative; height: 420px; width: 100%; }
+        .pie-container { position: relative; height: 320px; width: 100%; }
         .glass-card { 
             background: rgba(255, 255, 255, 0.95); 
             border-radius: 1rem; 
@@ -28,9 +31,29 @@
         input[type="radio"].view-toggle:checked + label {
             background-color: #4f46e5; color: white; border-color: #4f46e5;
         }
+        
+        /* Loading Overlay */
+        #loadingScreen {
+            position: fixed; inset: 0; background: rgba(248, 250, 252, 0.9);
+            z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            backdrop-filter: blur(4px);
+        }
+        .spinner {
+            width: 50px; height: 50px; border: 5px solid #e2e8f0; border-top-color: #4f46e5;
+            border-radius: 50%; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
-<body class="text-slate-800 antialiased bg-gradient-main p-4 md:p-6 lg:p-8">
+<body class="text-slate-800 antialiased bg-gradient-main p-4 md:p-6 lg:p-8 relative">
+
+    <!-- หน้าจอโหลดข้อมูล (แสดงผลทันทีที่เปิดเว็บ) -->
+    <div id="loadingScreen">
+        <div class="spinner"></div>
+        <h2 class="mt-6 text-xl font-bold text-slate-800">กำลังประมวลผลข้อมูลคุณภาพอากาศ...</h2>
+        <p class="text-slate-500 mt-2 text-sm">กรุณารอสักครู่ ระบบกำลังดึงข้อมูลล่าสุดจากฐานข้อมูล</p>
+        <p id="errorText" class="text-rose-600 font-medium mt-4 text-center px-4 hidden"></p>
+    </div>
 
     <div class="max-w-7xl mx-auto space-y-6">
         
@@ -39,53 +62,14 @@
             <div class="flex-1">
                 <h1 class="text-2xl md:text-3xl font-bold text-slate-800">รายงานสถานการณ์ฝุ่น PM10 และ PM2.5</h1>
                 <p class="text-slate-500 mt-1.5 text-sm md:text-base font-medium flex items-center gap-2">
-                    <span id="headerStatus" class="inline-flex w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse"></span>
-                    <span id="headerStatusText">รอการตั้งค่าเชื่อมต่อฐานข้อมูล...</span>
+                    <span id="headerStatus" class="inline-flex w-2.5 h-2.5 bg-emerald-500 rounded-full"></span>
+                    <span id="headerStatusText">ข้อมูลอัปเดตล่าสุดพร้อมใช้งาน</span>
                 </p>
             </div>
-            <button onclick="showSetup()" id="btnSetup" style="display:none;" class="text-sm bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg hover:bg-slate-50 shadow-sm font-medium transition">
-                ⚙️ ตั้งค่าลิงก์ฐานข้อมูลใหม่
-            </button>
         </header>
 
-        <!-- Setup Section (ฟอร์มกรอกลิงก์) -->
-        <div class="glass-card p-8 space-y-6" id="setupSection">
-            <div class="max-w-2xl mx-auto">
-                <h2 class="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
-                    <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
-                    เชื่อมต่อฐานข้อมูล Google Sheets
-                </h2>
-                <div class="space-y-5">
-                    <div>
-                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">🔗 ลิงก์ CSV ฝุ่น PM10</label>
-                        <input type="text" id="inputUrlPm10" class="w-full rounded-lg border border-slate-300 p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50 focus:bg-white transition" placeholder="วางลิงก์ชีต PM10 ที่นี่">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">🔗 ลิงก์ CSV ฝุ่น PM2.5</label>
-                        <input type="text" id="inputUrlPm25" class="w-full rounded-lg border border-slate-300 p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50 focus:bg-white transition" placeholder="วางลิงก์ชีต PM2.5 ที่นี่">
-                    </div>
-                    <div class="pt-2">
-                        <button onclick="saveAndLoadData()" id="btnLoadData" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-lg shadow-md transition-colors flex justify-center items-center gap-2">
-                            โหลดข้อมูลเพื่อแสดงผล
-                        </button>
-                        <p id="setupErrorMsg" class="text-rose-500 text-sm mt-3 text-center font-semibold hidden"></p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- กล่องคำแนะนำช่วยเหลือกรณีขึ้น Failed to fetch -->
-            <div class="max-w-2xl mx-auto mt-6 p-4 bg-amber-50 rounded-lg border border-amber-200 text-amber-900 text-sm space-y-2">
-                <h3 class="font-bold flex items-center gap-2">💡 คำแนะนำสำหรับการแก้ปัญหา "Failed to fetch":</h3>
-                <ul class="list-disc list-inside space-y-1 text-xs text-amber-800">
-                    <li><strong>สาเหตุหลัก:</strong> คุณกำลังเปิดไฟล์นี้โดยตรงจากคอมพิวเตอร์ของคุณ (สังเกตแถบที่อยู่จะเป็น <code class="bg-amber-100 px-1 py-0.5 rounded">file:///C:/...</code>) ซึ่งระบบความปลอดภัยของเบราว์เซอร์จะบล็อกการดึงข้อมูลจากภายนอก</li>
-                    <li><strong>วิธีแก้ไข:</strong> นำไฟล์นี้ไปอัปโหลดขึ้นบริการโฮสต์ฟรี เช่น <strong>GitHub Pages</strong> หรือ <strong>Vercel</strong> เมื่อเปิดใช้งานผ่านลิงก์เว็บไซต์จริง ปัญหานี้จะหายไปทันทีครับ</li>
-                    <li>โปรดมั่นใจว่าลิงก์ทั้ง 2 ช่องไม่ใช่ลิงก์เดียวกัน (ชีต PM10 และ PM2.5 จะมีรหัส <code class="bg-amber-100 px-1 py-0.5 rounded">gid</code> ท้ายลิงก์ต่างกัน)</li>
-                </ul>
-            </div>
-        </div>
-
-        <!-- Dashboard Content (ซ่อนไว้ก่อนจนกว่าจะโหลดข้อมูลสำเร็จ) -->
-        <div id="dashboardContent" class="space-y-6" style="display: none;">
+        <!-- Dashboard Content (ซ่อนไว้ก่อนจนกว่าข้อมูลจะโหลดเสร็จ) -->
+        <div id="dashboardContent" class="space-y-6" style="opacity: 0; transition: opacity 0.5s ease-in;">
             
             <!-- KPI Controls -->
             <div class="flex flex-col md:flex-row justify-between items-end bg-white/60 p-4 rounded-xl border border-slate-200 shadow-sm gap-4">
@@ -134,6 +118,33 @@
                         <span class="text-sm font-medium text-slate-500">วัน</span>
                     </div>
                     <p class="text-xs text-slate-500 mt-3 font-medium bg-slate-100 px-2 py-1 rounded inline-block" id="kpi-total-days-2">จากข้อมูลทั้งหมด</p>
+                </div>
+            </div>
+
+            <!-- Pie Charts Section -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mt-6">
+                <!-- Pie Chart PM10 -->
+                <div class="glass-card p-6 border-t-4 border-rose-500">
+                    <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                        <span class="w-3.5 h-3.5 rounded-full bg-rose-500 shadow-sm"></span>
+                        สัดส่วนวันที่ PM10 เกินมาตรฐาน (รวมทุกปี)
+                    </h3>
+                    <div class="pie-container">
+                        <canvas id="pm10PieChart"></canvas>
+                    </div>
+                    <p class="text-xs text-center text-slate-500 mt-4">ข้อมูลจะถูกอัปเดตและแยกสีตามปีอัตโนมัติเมื่อมีข้อมูลใหม่</p>
+                </div>
+                
+                <!-- Pie Chart PM2.5 -->
+                <div class="glass-card p-6 border-t-4 border-amber-500">
+                    <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                        <span class="w-3.5 h-3.5 rounded-full bg-amber-500 shadow-sm"></span>
+                        สัดส่วนวันที่ PM2.5 เกินมาตรฐาน (รวมทุกปี)
+                    </h3>
+                    <div class="pie-container">
+                        <canvas id="pm25PieChart"></canvas>
+                    </div>
+                    <p class="text-xs text-center text-slate-500 mt-4">ข้อมูลจะถูกอัปเดตและแยกสีตามปีอัตโนมัติเมื่อมีข้อมูลใหม่</p>
                 </div>
             </div>
 
@@ -187,153 +198,133 @@
     </div>
 
     <script>
-        // --- การตั้งค่า Chart.js ---
+        // --------------------------------------------------------------------------------------
+        // ⚠️ ลิงก์ตรงจาก Google Sheets เผยแพร่แบบ CSV ของคุณ ⚠️
+        // ผอ. เปิดเว็บปุ๊บ ระบบจะดึงข้อมูลจากลิงก์ 2 บรรทัดนี้ทันทีแบบ Zero-click
+        // --------------------------------------------------------------------------------------
+        const URL_PM10 = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ78TKW6fdV_M3JofuHHC_5khNgq4X0FKaI7MDBnuDCxoIA5BEuTYMojkg08C15xBOd_SilwpcI9r2x/pub?gid=1264471114&single=true&output=csv"; 
+        const URL_PM25 = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ78TKW6fdV_M3JofuHHC_5khNgq4X0FKaI7MDBnuDCxoIA5BEuTYMojkg08C15xBOd_SilwpcI9r2x/pub?gid=972658572&single=true&output=csv";
+        // --------------------------------------------------------------------------------------
+
         Chart.defaults.font.family = "'Prompt', sans-serif";
         Chart.defaults.color = '#64748b';
-        if (window['chartjs-plugin-annotation']) {
-            Chart.register(window['chartjs-plugin-annotation']);
-        }
+        if (window['chartjs-plugin-annotation']) Chart.register(window['chartjs-plugin-annotation']);
+        if (window.ChartDataLabels) Chart.register(window.ChartDataLabels);
 
-        let pm10ChartInstance = null;
-        let pm25ChartInstance = null;
+        let pm10ChartInstance = null; let pm25ChartInstance = null;
+        let pm10PieChartInstance = null; let pm25PieChartInstance = null;
+        
         let globalRawData = [];
         let availableYearsGlobal = [];
         let currentViewMode = 'overlay'; 
         let hiddenYearsContinuousPM10 = new Set();
         let hiddenYearsContinuousPM25 = new Set();
 
+        // ชุดสีรองรับข้อมูลในอนาคต หากมีเกิน 8 ปี สีจะวนกลับมาใช้ซ้ำโดยอัตโนมัติ
         const yearColors = [
-            { border: '#4f46e5', bg: 'rgba(79, 70, 229, 0.15)' }, 
-            { border: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.15)' }, 
-            { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)' }, 
-            { border: '#ec4899', bg: 'rgba(236, 72, 153, 0.15)' }, 
-            { border: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' }, 
-            { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.15)' }  
+            { border: '#4f46e5', bg: 'rgba(79, 70, 229, 0.15)' }, // Indigo
+            { border: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.15)' }, // Sky
+            { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)' }, // Amber
+            { border: '#ec4899', bg: 'rgba(236, 72, 153, 0.15)' }, // Pink
+            { border: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' }, // Emerald
+            { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.15)' }, // Violet
+            { border: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)' },  // Red
+            { border: '#14b8a6', bg: 'rgba(20, 184, 166, 0.15)' }  // Teal
         ];
 
-        // --- ระบบบันทึกและโหลดข้อมูล CSV ---
+        const pieColorsPalette = [
+            'rgba(99, 102, 241, 0.85)', 'rgba(14, 165, 233, 0.85)', 'rgba(245, 158, 11, 0.85)',
+            'rgba(236, 72, 153, 0.85)', 'rgba(16, 185, 129, 0.85)', 'rgba(139, 92, 246, 0.85)',
+            'rgba(239, 68, 68, 0.85)',  'rgba(20, 184, 166, 0.85)'
+        ];
+
+        // 🚀 เริ่มทำงานทันทีที่โหลดหน้าเว็บเสร็จ
         window.addEventListener('DOMContentLoaded', () => {
-            const savedUrl10 = localStorage.getItem('URL_PM10');
-            const savedUrl25 = localStorage.getItem('URL_PM25');
-            if (savedUrl10) document.getElementById('inputUrlPm10').value = savedUrl10;
-            if (savedUrl25) document.getElementById('inputUrlPm25').value = savedUrl25;
-            
-            // โหลดออโต้ถ้ามีลิงก์อยู่แล้ว
-            if (savedUrl10 && savedUrl25) {
-                loadData(savedUrl10, savedUrl25);
-            }
+            // ไม่สนใจ LocalStorage แล้ว บังคับใช้ลิงก์ที่ฝังไว้เสมอ
+            autoLoadData();
         });
 
-        function showSetup() {
-            document.getElementById('setupSection').style.display = 'block';
-            document.getElementById('dashboardContent').style.display = 'none';
-            document.getElementById('btnSetup').style.display = 'none';
-            document.getElementById('headerStatus').className = "inline-flex w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse";
-            document.getElementById('headerStatusText').innerText = "รอการตั้งค่าลิงก์...";
+        async function fetchGoogleSheetData(url) {
+            // ใส่ Time parameter ต่อท้ายลิงก์เพื่อป้องกันเบราว์เซอร์จำข้อมูลเก่า (Cache Busting)
+            const cacheBusterUrl = url + "&_t=" + new Date().getTime();
+            const response = await fetch(cacheBusterUrl);
+            
+            if (!response.ok) throw new Error(`การเชื่อมต่อถูกปฏิเสธ (HTTP ${response.status})`);
+            const buffer = await response.arrayBuffer();
+            
+            const textPreview = new TextDecoder().decode(new Uint8Array(buffer).slice(0, 100)).toLowerCase().trim();
+            if (textPreview.startsWith('<!doctype') || textPreview.startsWith('<html')) {
+                throw new Error("ลิงก์ฐานข้อมูลไม่ถูกต้อง หรือถูกปิดกั้นการเข้าถึง");
+            }
+            return buffer;
         }
 
-        function saveAndLoadData() {
-            const url10 = document.getElementById('inputUrlPm10').value.trim();
-            const url25 = document.getElementById('inputUrlPm25').value.trim();
-            const errorMsg = document.getElementById('setupErrorMsg');
-            
-            if (!url10 || !url25) {
-                errorMsg.innerText = "กรุณากรอกลิงก์ CSV ให้ครบทั้ง 2 ช่องครับ";
-                errorMsg.classList.remove('hidden');
-                return;
+        function extractCleanData(buffer) {
+            let rawData = [];
+            try {
+                const workbook = XLSX.read(buffer, {type: 'array', cellDates: false});
+                const sheetName = workbook.SheetNames[0];
+                if (!sheetName) return [];
+                rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: null, raw: false });
+            } catch (err) {
+                console.error("XLSX Parse Error:", err);
+                throw new Error("อ่านข้อมูลไม่สำเร็จ รูปแบบตารางอาจผิดเพี้ยน");
             }
-            if (!url10.includes('http') || !url25.includes('http')) {
-                errorMsg.innerText = "รูปแบบลิงก์ไม่ถูกต้อง (ต้องขึ้นต้นด้วย http)";
-                errorMsg.classList.remove('hidden');
-                return;
-            }
-
-            errorMsg.classList.add('hidden');
-            localStorage.setItem('URL_PM10', url10);
-            localStorage.setItem('URL_PM25', url25);
             
-            loadData(url10, url25);
-        }
-
-        // --- ฟังก์ชันแก้ปัญหาปี 2513 และช่องว่างในวันที่ ---
-        function extractCleanData(text, typeStr) {
-            // ดึงเป็น String ตรงๆ เพื่อเลี่ยงปัญหา Excel Serial Date (44xxx)
-            const rawData = XLSX.utils.sheet_to_json(XLSX.read(text, {type: 'string', cellDates: false}).Sheets.Sheet1, { defval: null, raw: false });
             const results = [];
-            
             rawData.forEach(row => {
-                let rDate = null;
-                let rVal = null;
+                let rDate = null; let rVal = null;
                 
                 Object.keys(row).forEach(key => {
                     const lowerKey = String(key).toLowerCase().trim();
-                    
-                    // --- ค้นหาคอลัมน์ "date" หรือ "วันที่" ---
-                    if (lowerKey === 'date' || lowerKey === 'วันที่') {
+                    if (lowerKey.includes('date') || lowerKey.includes('วันที่') || lowerKey === 'เวลา') {
                         let dateVal = row[key];
-                        // ข้ามแถวที่วันที่เป็นค่าว่าง (สาเหตุหนึ่งของปี 2513)
                         if (dateVal !== null && String(dateVal).trim() !== "") {
-                            // แปลงช่องว่างตรงกลางให้เป็นตัว 'T' (2021-01-01 00:00:00 -> 2021-01-01T00:00:00) 
-                            // เพื่อแก้บัค Safari Invalid Date
                             let safeDateStr = String(dateVal).trim().replace(' ', 'T');
-                            const parsedDate = new Date(safeDateStr);
+                            let parsedDate = new Date(safeDateStr);
                             
-                            // เช็คว่าเป็นวันที่ถูกต้อง และต้องเป็นปีหลังปี 2000 (ตัดปัญหาปี 1970/2513 ทิ้ง)
-                            if (!isNaN(parsedDate.getTime()) && parsedDate.getFullYear() > 2000) {
-                                rDate = parsedDate;
+                            // จัดการรูปแบบวันที่ของไทย (DD/MM/YYYY)
+                            if (isNaN(parsedDate.getTime()) && safeDateStr.includes('/')) {
+                                const parts = safeDateStr.split('T')[0].split('/');
+                                if (parts.length === 3) {
+                                    let day = parseInt(parts[0], 10);
+                                    let month = parseInt(parts[1], 10) - 1;
+                                    let year = parseInt(parts[2], 10);
+                                    if(year < 2000) { if (year > 2500) year -= 543; }
+                                    parsedDate = new Date(year, month, day);
+                                }
                             }
+                            if (!isNaN(parsedDate.getTime()) && parsedDate.getFullYear() > 2000) rDate = parsedDate;
                         }
                     }
 
-                    // --- ค้นหาคอลัมน์ "value" หรือ "ค่า" ---
-                    if (lowerKey === 'value' || lowerKey === 'ค่า') {
+                    if (lowerKey === 'value' || lowerKey === 'ค่า' || lowerKey.includes('pm10') || lowerKey.includes('pm2.5') || lowerKey.includes('pm25')) {
                         if (row[key] !== null && String(row[key]).trim() !== "") {
                             const parsedNum = parseFloat(row[key]);
-                            if (!isNaN(parsedNum)) {
-                                rVal = parsedNum;
-                            }
+                            if (!isNaN(parsedNum)) rVal = parsedNum;
                         }
                     }
                 });
 
-                if (rDate && rVal !== null) {
-                    rDate.setHours(0,0,0,0);
-                    results.push({ date: rDate, val: rVal });
-                }
+                if (rDate && rVal !== null) { rDate.setHours(0,0,0,0); results.push({ date: rDate, val: rVal }); }
             });
-
             return results;
         }
 
-        function fixGoogleSheetUrl(url) {
-            if (url.includes('/pubhtml')) return url.replace('/pubhtml', '/pub?output=csv');
-            if (url.includes('/edit')) return url.replace(/\/edit.*$/, '/pub?output=csv');
-            return url;
-        }
-
-        async function loadData(url10, url25) {
-            const btn = document.getElementById('btnLoadData');
-            const status = document.getElementById('headerStatusText');
-            
-            if(btn) btn.innerHTML = "⏳ กำลังดึงข้อมูล... โปรดรอสักครู่";
-            document.getElementById('dashboardContent').style.display = 'none';
-            status.innerText = "กำลังเชื่อมต่อกับ Google Sheets...";
-
+        async function autoLoadData() {
             try {
                 const [res10, res25] = await Promise.all([
-                    fetch(fixGoogleSheetUrl(url10)).then(r => r.text()),
-                    fetch(fixGoogleSheetUrl(url25)).then(r => r.text())
+                    fetchGoogleSheetData(URL_PM10),
+                    fetchGoogleSheetData(URL_PM25)
                 ]);
 
-                // แปลงข้อมูลด้วยฟังก์ชันที่อุดรอยรั่วเรื่องวันที่แล้ว
-                const cleanData10 = extractCleanData(res10, 'pm10');
-                const cleanData25 = extractCleanData(res25, 'pm25');
+                const cleanData10 = extractCleanData(res10);
+                const cleanData25 = extractCleanData(res25);
 
                 if (cleanData10.length === 0 && cleanData25.length === 0) {
-                    throw new Error("ไม่พบข้อมูลที่อ่านได้ (กรุณาเช็คชื่อคอลัมน์ 'date' และ 'value')");
+                    throw new Error("ดาวน์โหลดสำเร็จ แต่ไม่พบข้อมูลในตาราง (เช็คชื่อคอลัมน์ date, value)");
                 }
 
-                // นำข้อมูลมารวมกัน (Merge) โดยใช้วันที่เป็น Key
                 const dateMap = new Map();
                 const yearsSet = new Set();
                 
@@ -360,34 +351,30 @@
                     document.getElementById('continuousLabel').innerText = `กราฟแบบต่อเนื่อง (${minYear}-${maxYear})`;
                 }
 
-                // หากสำเร็จ ให้แสดงผล
-                document.getElementById('setupSection').style.display = 'none';
-                document.getElementById('dashboardContent').style.display = 'block';
-                document.getElementById('btnSetup').style.display = 'block';
-                
-                document.getElementById('headerStatus').className = "inline-flex w-2.5 h-2.5 bg-emerald-500 rounded-full";
-                status.innerText = "เชื่อมต่อและอัปเดตข้อมูลเรียบร้อยแล้ว (อัปเดตอัตโนมัติทุก 1 ชม.)";
+                // ซ่อนหน้าจอโหลด แล้วแสดง Dashboard สวยๆ
+                document.getElementById('loadingScreen').style.display = 'none';
+                const dashboard = document.getElementById('dashboardContent');
+                dashboard.style.display = 'block';
+                setTimeout(() => { dashboard.style.opacity = '1'; }, 50);
 
                 populateYearFilter();
                 handleKPIYearChange();
+                renderPieCharts();
                 updateDashboardCharts();
 
             } catch (e) {
                 console.error(e);
-                const errorMsg = document.getElementById('setupErrorMsg');
-                if(errorMsg) {
-                    errorMsg.innerText = "ข้อผิดพลาด: " + e.message;
-                    errorMsg.classList.remove('hidden');
-                }
-                document.getElementById('setupSection').style.display = 'block'; 
-                document.getElementById('headerStatus').className = "inline-flex w-2.5 h-2.5 bg-rose-500 rounded-full";
-                status.innerText = "การเชื่อมต่อล้มเหลว";
-            } finally {
-                if(btn) btn.innerHTML = "โหลดข้อมูลเพื่อแสดงผล";
+                // ถ้าพัง ให้โชว์ Error กลางหน้าจอเลย ผอ. จะได้รู้ปัญหา
+                const spinner = document.querySelector('.spinner');
+                if(spinner) spinner.style.display = 'none';
+                
+                const errorEl = document.getElementById('errorText');
+                errorEl.innerText = "เกิดข้อผิดพลาด: " + e.message;
+                errorEl.classList.remove('hidden');
             }
         }
 
-        // --- ส่วนการจัดการ Dashboard และกราฟ ---
+        // --- ระบบควบคุม UI ---
         function populateYearFilter() {
             const select = document.getElementById('kpiYearFilter');
             select.innerHTML = '<option value="all">รวมทุกปี (ค่าเฉลี่ยรวม)</option>';
@@ -403,8 +390,7 @@
             if (selectedYear !== 'all') {
                 const yearInt = parseInt(selectedYear);
                 filteredData = globalRawData.filter(d => {
-                    let y = d.date.getFullYear();
-                    if (y < 2500) y += 543;
+                    let y = d.date.getFullYear(); if (y < 2500) y += 543;
                     return y === yearInt;
                 });
                 document.getElementById('title-pm10-avg').innerText = `ค่าเฉลี่ย PM10 (ปี ${yearInt})`;
@@ -423,7 +409,6 @@
         function updateKPIValues(data, selectedYear = 'all') {
             let pm10Sum = 0, pm10Count = 0, pm10Exceed = 0;
             let pm25Sum = 0, pm25Count = 0, pm25Exceed = 0;
-            
             const transitionDatePM25 = new Date(2023, 5, 1); 
             const transitionDatePM10 = new Date(2026, 0, 1); 
 
@@ -434,13 +419,11 @@
                 const pm25Std = isNewStdPM25 ? 37.5 : 50;
 
                 if (row.pm10 !== null && row.pm10 !== undefined) {
-                    pm10Sum += row.pm10;
-                    pm10Count++;
+                    pm10Sum += row.pm10; pm10Count++;
                     if (row.pm10 > pm10Std) pm10Exceed++;
                 }
                 if (row.pm25 !== null && row.pm25 !== undefined) {
-                    pm25Sum += row.pm25;
-                    pm25Count++;
+                    pm25Sum += row.pm25; pm25Count++;
                     if (row.pm25 > pm25Std) pm25Exceed++;
                 }
             });
@@ -449,13 +432,11 @@
             document.getElementById('kpi-pm10-exceed').innerText = pm10Exceed;
             document.getElementById('kpi-pm25-avg').innerText = pm25Count ? (pm25Sum / pm25Count).toFixed(1) : '--';
             document.getElementById('kpi-pm25-exceed').innerText = pm25Exceed;
-            
             document.getElementById('kpi-total-days-1').innerText = `คำนวณจากข้อมูล ${pm10Count.toLocaleString()} วัน`;
             document.getElementById('kpi-total-days-2').innerText = `คำนวณจากข้อมูล ${pm25Count.toLocaleString()} วัน`;
 
             const pm10TextEl = document.getElementById('kpi-std-pm10-text');
             const pm25TextEl = document.getElementById('kpi-std-pm25-text');
-
             if (selectedYear === 'all') {
                 pm10TextEl.innerText = "มาตรฐาน 24 ชม.: อ้างอิงตามประกาศแต่ละปี";
                 pm25TextEl.innerText = "มาตรฐาน 24 ชม.: อ้างอิงตามประกาศแต่ละปี";
@@ -463,24 +444,107 @@
                 const yInt = parseInt(selectedYear);
                 if (yInt < 2569) pm10TextEl.innerText = "มาตรฐาน 24 ชม. ≤ 120 µg/m³";
                 else pm10TextEl.innerText = "มาตรฐาน 24 ชม. ≤ 100 µg/m³ (ประกาศใหม่)";
-
                 if (yInt < 2566) pm25TextEl.innerText = "มาตรฐาน 24 ชม. ≤ 50 µg/m³";
                 else if (yInt === 2566) pm25TextEl.innerText = "มาตรฐาน 24 ชม. ≤ 50 (ก่อน 1 มิ.ย.) / ≤ 37.5 (หลัง)";
                 else pm25TextEl.innerText = "มาตรฐาน 24 ชม. ≤ 37.5 µg/m³";
             }
         }
 
-        // --- ระบบวาดกราฟ ---
+        // --- ระบบวาดพายชาร์ตแบบแสดงตัวเลข (รองรับปีอนาคตอัตโนมัติ) ---
+        function renderPieCharts() {
+            const exceedCountsPM10 = {}; const exceedCountsPM25 = {};
+            const transitionDatePM25 = new Date(2023, 5, 1);
+            const transitionDatePM10 = new Date(2026, 0, 1);
+
+            // โครงสร้างนี้จะสร้างปีใหม่ๆ (2569, 2570) ขึ้นมาอัตโนมัติตามข้อมูลที่มี
+            availableYearsGlobal.forEach(y => {
+                exceedCountsPM10[y] = 0;
+                exceedCountsPM25[y] = 0;
+            });
+
+            globalRawData.forEach(row => {
+                let y = row.date.getFullYear(); if (y < 2500) y += 543;
+                const isNewStdPM10 = row.date >= transitionDatePM10;
+                const isNewStdPM25 = row.date >= transitionDatePM25;
+                const pm10Std = isNewStdPM10 ? 100 : 120;
+                const pm25Std = isNewStdPM25 ? 37.5 : 50;
+
+                if (row.pm10 !== null && row.pm10 !== undefined && row.pm10 > pm10Std) exceedCountsPM10[y]++;
+                if (row.pm25 !== null && row.pm25 !== undefined && row.pm25 > pm25Std) exceedCountsPM25[y]++;
+            });
+
+            const labels = availableYearsGlobal.map(y => `ปี ${y}`);
+            const data10 = availableYearsGlobal.map(y => exceedCountsPM10[y]);
+            const data25 = availableYearsGlobal.map(y => exceedCountsPM25[y]);
+
+            const getDynamicColors = (count) => {
+                let colors = [];
+                for(let i=0; i<count; i++) colors.push(pieColorsPalette[i % pieColorsPalette.length]);
+                return colors;
+            };
+
+            const pieOptions = {
+                responsive: true, maintainAspectRatio: false, cutout: '65%',
+                plugins: {
+                    legend: { position: 'right', labels: { usePointStyle: true, padding: 15, font: { family: "'Prompt', sans-serif", size: 13 } } },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.95)', titleColor: '#1e293b', bodyColor: '#475569',
+                        borderColor: '#e2e8f0', borderWidth: 1, padding: 12,
+                        titleFont: { family: "'Prompt', sans-serif", size: 14, weight: '600' },
+                        bodyFont: { family: "'Prompt', sans-serif", size: 14 },
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.label || ''; if (label) label += ': ';
+                                if (context.parsed !== null) {
+                                    const total = context.dataset.data.reduce((acc, curr) => acc + curr, 0);
+                                    const percentage = total > 0 ? Math.round((context.parsed / total) * 100) : 0;
+                                    label += context.parsed + ' วัน (' + percentage + '%)';
+                                }
+                                return label;
+                            }
+                        }
+                    },
+                    datalabels: {
+                        color: '#ffffff',
+                        font: { family: "'Prompt', sans-serif", weight: 'bold', size: 13 },
+                        formatter: (value, ctx) => {
+                            if (value === 0) return null; // ซ่อนเลข 0 วัน
+                            const total = ctx.dataset.data.reduce((acc, curr) => acc + curr, 0);
+                            const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                            // โชว์เลขจำนวนวัน ตามด้วยเปอร์เซ็นต์ บรรทัดล่าง
+                            return `${value} วัน\n(${percentage}%)`;
+                        },
+                        textAlign: 'center',
+                        textShadowBlur: 4, textShadowColor: 'rgba(0,0,0,0.6)'
+                    }
+                }
+            };
+
+            Chart.defaults.plugins.datalabels.display = false;
+
+            if (pm10PieChartInstance) pm10PieChartInstance.destroy();
+            const ctx10Pie = document.getElementById('pm10PieChart').getContext('2d');
+            pm10PieChartInstance = new Chart(ctx10Pie, {
+                type: 'doughnut',
+                data: { labels: labels, datasets: [{ data: data10, backgroundColor: getDynamicColors(labels.length), borderWidth: 3, borderColor: '#ffffff', hoverOffset: 4 }] },
+                options: { ...pieOptions, plugins: { ...pieOptions.plugins, datalabels: { ...pieOptions.plugins.datalabels, display: true } } }
+            });
+
+            if (pm25PieChartInstance) pm25PieChartInstance.destroy();
+            const ctx25Pie = document.getElementById('pm25PieChart').getContext('2d');
+            pm25PieChartInstance = new Chart(ctx25Pie, {
+                type: 'doughnut',
+                data: { labels: labels, datasets: [{ data: data25, backgroundColor: getDynamicColors(labels.length), borderWidth: 3, borderColor: '#ffffff', hoverOffset: 4 }] },
+                options: { ...pieOptions, plugins: { ...pieOptions.plugins, datalabels: { ...pieOptions.plugins.datalabels, display: true } } }
+            });
+        }
+
+        // --- ระบบวาดกราฟเส้น ---
         function createLineAnnotation(val, text, color, isVisible, position = 'start', xMin, xMax) {
             const colorCode = color === 'red' ? 'rgb(225, 29, 72)' : 'rgb(245, 158, 11)';
             const bgCode = color === 'red' ? 'rgba(225, 29, 72, 0.85)' : 'rgba(245, 158, 11, 0.85)';
-            const ann = {
-                display: isVisible, type: 'line', yMin: val, yMax: val,
-                borderColor: colorCode, borderWidth: 2, borderDash: [5, 5],
-                label: { display: true, content: text, position: position, backgroundColor: bgCode, color: 'white', font: { family: "'Prompt', sans-serif", size: 11, weight: '500' } }
-            };
-            if (xMin !== undefined) ann.xMin = xMin;
-            if (xMax !== undefined) ann.xMax = xMax;
+            const ann = { display: isVisible, type: 'line', yMin: val, yMax: val, borderColor: colorCode, borderWidth: 2, borderDash: [5, 5], label: { display: true, content: text, position: position, backgroundColor: bgCode, color: 'white', font: { family: "'Prompt', sans-serif", size: 11, weight: '500' } } };
+            if (xMin !== undefined) ann.xMin = xMin; if (xMax !== undefined) ann.xMax = xMax;
             return ann;
         }
 
@@ -497,15 +561,9 @@
                 addAnn('annual', isNew ? newAnnual : oldAnnual, 'มาตรฐานรายปี ('+(isNew ? newAnnual : oldAnnual)+')', 'orange', showAnnual, 'end');
             } else {
                 if (oldDaily === newDaily) addAnn('daily', oldDaily, 'มาตรฐาน 24 ชม. ('+oldDaily+')', 'red', showDaily, 'start');
-                else {
-                    addAnn('dailyOld', oldDaily, 'มาตรฐาน 24 ชม. เดิม ('+oldDaily+')', 'red', showDaily, 'start', 0, firstNewIndex);
-                    addAnn('dailyNew', newDaily, 'มาตรฐาน 24 ชม. ใหม่ ('+newDaily+')', 'red', showDaily, 'center', firstNewIndex, filteredData.length - 1);
-                }
+                else { addAnn('dailyOld', oldDaily, 'มาตรฐาน 24 ชม. เดิม ('+oldDaily+')', 'red', showDaily, 'start', 0, firstNewIndex); addAnn('dailyNew', newDaily, 'มาตรฐาน 24 ชม. ใหม่ ('+newDaily+')', 'red', showDaily, 'center', firstNewIndex, filteredData.length - 1); }
                 if (oldAnnual === newAnnual) addAnn('annual', oldAnnual, 'มาตรฐานรายปี ('+oldAnnual+')', 'orange', showAnnual, 'end');
-                else {
-                    addAnn('annualOld', oldAnnual, 'รายปีเดิม ('+oldAnnual+')', 'orange', showAnnual, 'end', 0, firstNewIndex);
-                    addAnn('annualNew', newAnnual, 'รายปีใหม่ ('+newAnnual+')', 'orange', showAnnual, 'center', firstNewIndex, filteredData.length - 1);
-                }
+                else { addAnn('annualOld', oldAnnual, 'รายปีเดิม ('+oldAnnual+')', 'orange', showAnnual, 'end', 0, firstNewIndex); addAnn('annualNew', newAnnual, 'รายปีใหม่ ('+newAnnual+')', 'orange', showAnnual, 'center', firstNewIndex, filteredData.length - 1); }
             }
             return annotations;
         }
@@ -550,7 +608,8 @@
                 plugins: {
                     legend: { position: 'top', labels: { usePointStyle: true, boxWidth: 10, padding: 20, color: '#334155', font: { family: "'Prompt', sans-serif", size: 14, weight: '500' } } },
                     tooltip: { backgroundColor: 'rgba(255, 255, 255, 0.95)', titleColor: '#1e293b', bodyColor: '#475569', borderColor: '#e2e8f0', borderWidth: 1, padding: 12, titleFont: { family: "'Prompt', sans-serif", size: 13, weight: '600' }, bodyFont: { family: "'Prompt', sans-serif", size: 13 }, boxPadding: 6 },
-                    annotation: { annotations: annotationsConfig }
+                    annotation: { annotations: annotationsConfig },
+                    datalabels: { display: false } // ปิดสำหรับกราฟเส้น
                 },
                 scales: {
                     x: { grid: { display: false, drawBorder: false }, ticks: { font: { family: "'Prompt', sans-serif", size: 12 }, color: '#64748b' } },
@@ -651,7 +710,7 @@
             const buildOverlayOptions = (anns) => {
                 const opt = getCommonChartOptions(anns);
                 opt.scales.x.ticks = { autoSkip: false, maxRotation: 0, color: '#64748b', callback: function(value) { const d = new Date(2024, 0, value + 1); if (d.getDate() === 15) { return d.toLocaleDateString('th-TH', { month: 'short' }); } return null; } };
-                opt.plugins.tooltip.callbacks = { title: function(tooltipItems) { return 'month ' + fullMonthLabels[tooltipItems[0].dataIndex]; } };
+                opt.plugins.tooltip.callbacks = { title: function(tooltipItems) { return 'เดือน' + fullMonthLabels[tooltipItems[0].dataIndex]; } };
                 return opt;
             };
 
@@ -676,11 +735,9 @@
             updateDashboardCharts();
         }
 
-        // รีเฟรชอัตโนมัติทุก 1 ชม. หากตั้งค่าลิงก์ไว้แล้ว
+        // รีเฟรชข้อมูลเรียลไทม์อัตโนมัติทุกๆ 1 ชั่วโมง
         setInterval(() => {
-            const u10 = localStorage.getItem('URL_PM10');
-            const u25 = localStorage.getItem('URL_PM25');
-            if (u10 && u25) loadData(u10, u25);
+            autoLoadData();
         }, 3600000);
 
     </script>
